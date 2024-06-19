@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <title>Todo</title>
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.2"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+</head>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        gap:10px;
+        height: 100vh;
+    }
+
+    button {
+        width: 30%;
+        margin: 4px;
+    }
+
+    button:hover {
+        cursor: pointer;
+    }
+
+    ul {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        width: 50%;
+        margin-top: 10px;
+    }
+
+    .complete {
+        background-color: mediumseagreen;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 5px;
+    }
+
+
+    li{
+        margin-top: 3px;
+        max-width: 100%;
+        min-width: 50px;
+    }
+
+    form {
+        display: flex;
+        width: 50%;
+        justify-content: space-between;
+
+        button {
+            padding: 5px;
+            border: none;
+            border-radius: 10px;
+            background-color: #007bff;
+            color: white;
+        }
+
+        input {
+            padding: 5px;
+            border: 1px solid #adadad;
+            border-radius: 10px;
+            width: 80%;
+        }
+    }
+
+
+</style>
+<body>
+
+<div>
+    <form hx-post="/test" hx-swap="outerHTML" >
+        <input name="name" required="true" placeholder="Name"/>
+        <button type="submit">Submit</button>
+    </form>
+</div>
+</body>
+</html>
