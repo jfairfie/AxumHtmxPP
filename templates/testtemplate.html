@@ -1,8 +1,8 @@
 <!DOCTYPE html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Todo</title>
-    <!-- HTMX -->
+    <title>Title</title>
     <script src="https://unpkg.com/htmx.org@1.9.2"></script>
     <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
 </head>
@@ -22,7 +22,6 @@
     }
 
     button {
-        width: 30%;
         margin: 4px;
     }
 
@@ -34,8 +33,12 @@
         list-style: none;
         display: flex;
         flex-direction: column;
-        width: 50%;
+        width: 80%;
         margin-top: 10px;
+    }
+
+    .hidden {
+        display: none;
     }
 
     .complete {
@@ -46,16 +49,33 @@
         padding: 5px;
     }
 
+    .check {
+        height: 6px;
+        width: 3px;
+        border-bottom: 2px solid green;
+        border-right: 2px solid green;
+        transform: rotate(45deg);
+        margin-top: 4px;
+        float: left;
+        margin-right: 4px;
+    }
 
     li{
         margin-top: 3px;
-        max-width: 100%;
-        min-width: 50px;
+        min-width: 140px;
+    }
+
+    button {
+        border: none;
+        padding: 7px;
+        color: white;
+        background-color: black;
+        border-radius: 5px;
     }
 
     form {
         display: flex;
-        width: 50%;
+        width: 100%;
         justify-content: space-between;
 
         button {
@@ -77,12 +97,18 @@
 
 </style>
 <body>
-
-<div>
-    <form hx-post="/test" hx-swap="outerHTML" >
-        <input name="name" required="true" placeholder="Name"/>
-        <button type="submit">Submit</button>
-    </form>
-</div>
+    <div hx-ext="ws" ws-connect="/ws/points">
+        <div id="newform"> </div>
+        <div id="showbtn"> </div>
+        <div id="clearbtn"> </div>
+        <div id="point">
+            <form id="form" ws-send>
+                <input type="text" name="name" placeholder="Name" />
+                <input type="text" name="point" value="{{ point }}" hidden />
+                <input name="id" value="{{ id }}" required readonly hidden />
+                <button type="submit">Submit</button>
+            </form>
+        </div>
+    </div>
 </body>
 </html>

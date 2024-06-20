@@ -22,16 +22,11 @@ pub struct Point {
     pub name: String,
 }
 
-
-#[derive(Serialize, Deserialize)]
-pub struct Msg {
-    pub name: String,
-    pub uid: Option<usize>,
-    pub message: String,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Msg1 {
-    pub point: String,
-    pub id: String,
+pub struct WSMessage {
+    pub name: Option<String>,
+    pub point: Option<String>,
+    pub id: Option<String>,
+    pub show: Option<String>,
+    pub clear: Option<String>,
 }
