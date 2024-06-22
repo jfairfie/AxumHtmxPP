@@ -30,12 +30,14 @@ pub struct WSMessage {
     pub id: Option<String>,
     pub show: Option<String>,
     pub clear: Option<String>,
+    pub delete_room: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Room {
     pub room_id: usize,
     pub name: String,
+    pub board_shown: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

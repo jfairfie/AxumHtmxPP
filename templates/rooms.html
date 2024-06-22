@@ -1,6 +1,7 @@
 {% for room in rooms %}
 <li>
     <span> {{ room.name }}</span>
+    <button hx-delete="/delete_room/{{ room.room_id }}" hx-target="#rooms" hx-vals=''>Remove</button>
     <a href="/rooms/{{ room.room_id }}">Join</a>
 </li>
 {% endfor %}
