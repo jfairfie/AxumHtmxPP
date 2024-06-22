@@ -1,0 +1,6 @@
+{% for room in rooms %}
+<li>
+    <span> {{ room.name }}</span>
+    <a href="/rooms/{{ room.room_id }}">Join</a>
+</li>
+{% endfor %}

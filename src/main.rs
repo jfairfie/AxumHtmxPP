@@ -1,19 +1,20 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LockResult, Mutex};
 use std::sync::atomic::AtomicUsize;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::extract::WebSocketUpgrade;
 use axum::extract::ws::{Message, WebSocket};
+use axum::Form;
 use axum::response::IntoResponse;
-use axum::routing::{get};
+use axum::routing::{get, post};
 use futures::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use tokio::sync::{mpsc, RwLock};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::models::{WSMessage, Point};
-use crate::template::{HtmlTemplate, PointingPageTemplate};
+use crate::models::{WSMessage, Point, Room, CreateRoomForm};
+use crate::template::{CreateRoomTemplate, HtmlTemplate, PointingPageTemplate, RoomTemplate};
 
 mod template;
 mod models;
@@ -22,10 +23,14 @@ lazy_static! {
     static ref POINTS: Mutex<HashMap<usize, Point>> = Mutex::new(HashMap::new());
     static ref USER_UNBOUNDED_SENDERS: Mutex<HashMap<usize, UnboundedSender<Message>>> = Mutex::new(HashMap::new());
     static ref ROOM_USER_UNBOUNDED_SENDERS: Mutex<HashMap<usize, HashMap<usize, UnboundedSender<Message>>>> = Mutex::new(HashMap::new());
+    static ref ROOMS: Mutex<HashMap<usize, Room>> = Mutex::new(HashMap::new());
     static ref BOARD_SHOWN: Mutex<bool> = Mutex::new(false);
+    static ref USER_ROOM: Mutex<HashMap<usize, usize>> = Mutex::new(HashMap::new());
 }
 
 static NEXT_USER_ID: AtomicUsize = AtomicUsize::new(1);
+static NEXT_ROOM_ID: AtomicUsize = AtomicUsize::new(1);
+
 type Users = Arc<RwLock<HashSet<usize>>>;
 
 #[tokio::main]
@@ -33,7 +38,9 @@ async fn main() -> std::io::Result<()> {
     let users = Users::default();
 
     let app = axum::Router::new()
-        .route("/", get(points_page))
+        .route("/", get(room_page).post(create_room))
+        .route("/rooms", get(get_rooms))
+        .route("/rooms/:id", get(points_page))
         .route("/ws/points", get(ws_points_handler))
         .with_state(users);
 
@@ -45,8 +52,35 @@ async fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-async fn points_page() -> impl IntoResponse {
-    HtmlTemplate(PointingPageTemplate { id: "".to_string(), point: "".to_string() }).into_response()
+async fn room_page() -> impl IntoResponse {
+    HtmlTemplate(CreateRoomTemplate { }).into_response()
+}
+
+async fn get_rooms() -> impl IntoResponse {
+    let rooms = ROOMS.lock().unwrap().iter().map(|(_, room)| room.clone()).collect();
+    HtmlTemplate(RoomTemplate { rooms }).into_response()
+}
+
+async fn create_room(form: Form<CreateRoomForm>) -> impl IntoResponse {
+    println!("Creating room");
+    let room_number = NEXT_ROOM_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let room = Room { room_id: room_number,name: form.name.clone() };
+    ROOMS.lock().unwrap().insert(room_number, room);
+    ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().insert(room_number, HashMap::new());
+    let rooms = ROOMS.lock().unwrap().iter().map(|(_, room)| room.clone()).collect();
+
+    HtmlTemplate(RoomTemplate { rooms }).into_response()
+}
+
+async fn points_page(Path(id): Path<u32>) -> impl IntoResponse {
+
+    if ROOMS.lock().unwrap().get(&(id as usize)).is_some() {
+        return HtmlTemplate(PointingPageTemplate { id: "".to_string(), point: "".to_string(), room_id: id }).into_response()
+    }
+
+
+    let rooms: Vec<Room> = ROOMS.lock().unwrap().iter().map(|(_, room)| room.clone()).collect();
+    return HtmlTemplate(RoomTemplate { rooms }).into_response();
 }
 
 async fn ws_points_handler(ws: WebSocketUpgrade, State(state): State<Users>) -> impl IntoResponse {
@@ -66,27 +100,26 @@ async fn points_websocket(ws: WebSocket, state: Users) {
     });
 
     while let Some(Ok(result)) = receiver.next().await {
-        if let Ok(_) = consume_message(my_id, result, &tx) {
-            broadcast_point(&state).await;
+        if let Ok(room_id) = consume_message(my_id, result, &tx) {
+            broadcast_point(room_id).await;
         }
     }
 
     println!("Disconnecting");
-    disconnect(Some(my_id), &state).await;
-    broadcast_point(&state).await;
+    let room_id = USER_ROOM.lock().unwrap().get(&my_id).unwrap().clone();
+    disconnect(Some(my_id)).await;
+    broadcast_point(room_id).await;
 }
 
-async fn disconnect(my_id: Option<usize>, users: &Users) {
+async fn disconnect(my_id: Option<usize>) {
     if my_id.is_some() {
-        users.write().await.remove(&my_id.unwrap());
-        USER_UNBOUNDED_SENDERS.lock().unwrap().remove(&my_id.unwrap());
         POINTS.lock().unwrap().remove(&my_id.unwrap());
+        let room_id =
+        ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().get_mut(&USER_ROOM.lock().unwrap().get(&my_id.unwrap()).unwrap()).unwrap().remove(&my_id.unwrap());
     }
 }
 
-
-
-async fn broadcast_point(users: &Users) {
+async fn broadcast_point(room_id: usize) {
     let mut all_points: String = "".to_string();
 
     let show = BOARD_SHOWN.lock().unwrap().clone();
@@ -110,12 +143,16 @@ async fn broadcast_point(users: &Users) {
         }
     }
 
+    let user_ids_on_room: Vec<usize> = ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().get(&room_id).unwrap().keys().cloned().collect();
+
+    /// TODO, change how the points work so they are grouped by room as well
     for point in POINTS.lock().unwrap().iter() {
-        println!("{}", point.1.point);
-        if point.1.point as i32 == 0 {
-            all_points.push_str(&format!("<li> {}: <span class=\"{}\"> {:?} </span></li>", point.1.name, shown_css, point.1.point).to_string());
-        } else {
-            all_points.push_str(&format!("<li> <div class=\"check\"></div> {}: <span class=\"{}\"> {:?} </span></li>", point.1.name, shown_css, point.1.point).to_string());
+        if user_ids_on_room.contains(&point.0) {
+            if point.1.point as i32 == 0 {
+                all_points.push_str(&format!("<li> {}: <span class=\"{}\"> {:?} </span></li>", point.1.name, shown_css, point.1.point).to_string());
+            } else {
+                all_points.push_str(&format!("<li> <div class=\"check\"></div> {}: <span class=\"{}\"> {:?} </span></li>", point.1.name, shown_css, point.1.point).to_string());
+            }
         }
     }
 
@@ -138,7 +175,7 @@ async fn broadcast_point(users: &Users) {
 
     let mut disconnect_ids: Vec<usize> = vec![];
 
-    for (&_uid, tx) in USER_UNBOUNDED_SENDERS.lock().unwrap().iter() {
+    for (&_uid, tx) in ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().get(&room_id).unwrap().iter() {
         match tx.send(Message::Text(tst_message.clone())) {
             Ok(_) => { println!("Sent"); },
             Err(_) => {
@@ -151,23 +188,35 @@ async fn broadcast_point(users: &Users) {
 
     if !disconnect_ids.is_empty() {
         for uid in disconnect_ids {
-            disconnect(Some(uid), users).await;
+            disconnect(Some(uid)).await;
         }
     }
 }
 
-fn consume_message(my_id: usize, result: Message, tx: &UnboundedSender<Message>) -> Result<(), String> {
+fn consume_message(my_id: usize, result: Message, tx: &UnboundedSender<Message>) -> Result<usize, String> {
     match result {
         Message::Text(msg) => {
-            println!("{}", msg);
+            let mut room_id: Option<usize> = None;
             let msg: WSMessage = serde_json::from_str(&msg).expect("Failed to parse message");
-
-            // also need to add a new room
+            println!("{:?}", msg);
 
             // if this occurs then the user is being added
-            if msg.id.is_some() && msg.id.clone().unwrap().len() == 0 {
-                USER_UNBOUNDED_SENDERS.lock().unwrap().insert(my_id, tx.clone());
+            if msg.id.is_some() && msg.id.clone().unwrap().len() == 0 && msg.room_id.is_some() {
+                // USER_UNBOUNDED_SENDERS.lock().unwrap().insert(my_id, tx.clone());
+                println!("Inserting room, user");
+                room_id = Some(msg.room_id.unwrap().parse::<usize>().unwrap());
+
+                ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().get_mut(&room_id.unwrap()).unwrap().insert(my_id, tx.clone());
+
+                match USER_ROOM.lock() {
+                    Ok(mut user_room) => { user_room.insert(my_id, room_id.unwrap()); }
+                    Err(err) => { println!("Error locking/inserting into user room: {:?}", err); }
+                }
+
+                // USER_ROOM.lock().unwrap().insert(my_id, room_id.unwrap());
                 POINTS.lock().unwrap().insert(my_id, Point { point: 0.0, name: format!("{}", msg.name.unwrap_or("".to_string())) });
+
+                println!("Completed room, user insertion");
             } else if msg.point.is_some() {
                 match msg.point.unwrap().parse::<f32>() {
                     Ok(point) => POINTS.lock().unwrap().get_mut(&my_id).unwrap().point = point,
@@ -175,23 +224,19 @@ fn consume_message(my_id: usize, result: Message, tx: &UnboundedSender<Message>)
                 }
 
                 // POINTS.lock().unwrap().get_mut(&my_id).unwrap().point = msg.point.unwrap().parse::<f32>().unwrap();
-                println!("Point changed to {:?}", POINTS.lock().unwrap().get(&my_id).unwrap().point);
             } else if msg.show.is_some() {
-                println!("Show changed to {:?}", msg.show.clone());
                 match msg.show.unwrap().as_str() {
                     "true" => BOARD_SHOWN.lock().unwrap().clone_from(&true),
                     "false" => BOARD_SHOWN.lock().unwrap().clone_from(&false),
                     _ => {}
                 }
             } else if msg.clear.is_some() {
-                println!("Clearing");
-
-                for user in USER_UNBOUNDED_SENDERS.lock().unwrap().iter() {
+                for user in ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().get(&USER_ROOM.lock().unwrap().get(&my_id).unwrap()).unwrap().iter() {
                     POINTS.lock().unwrap().get_mut(&user.0).unwrap().point = 0.0;
                 }
             }
 
-            Ok(())
+            Ok(room_id.unwrap_or(USER_ROOM.lock().unwrap().get(&my_id).unwrap().clone()))
         },
         _ => Err("Invalid message".to_string())
     }

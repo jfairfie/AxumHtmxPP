@@ -24,9 +24,21 @@ pub struct Point {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WSMessage {
+    pub room_id: Option<String>,
     pub name: Option<String>,
     pub point: Option<String>,
     pub id: Option<String>,
     pub show: Option<String>,
     pub clear: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Room {
+    pub room_id: usize,
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CreateRoomForm {
+    pub name: String,
 }

@@ -93,22 +93,21 @@
             width: 80%;
         }
     }
-
-
 </style>
 <body>
-    <div hx-ext="ws" ws-connect="/ws/points">
-        <div id="newform"> </div>
-        <div id="showbtn"> </div>
-        <div id="clearbtn"> </div>
-        <div id="point">
-            <form id="form" ws-send>
-                <input type="text" name="name" placeholder="Name" />
-                <input type="text" name="point" value="{{ point }}" hidden />
-                <input name="id" value="{{ id }}" required readonly hidden />
-                <button type="submit">Submit</button>
-            </form>
-        </div>
+<div hx-ext="ws" ws-connect="/ws/points">
+    <div id="newform"> </div>
+    <div id="showbtn"> </div>
+    <div id="clearbtn"> </div>
+    <div id="point">
+        <form id="form" ws-send>
+            <input type="text" name="name" placeholder="Name" />
+            <input type="text" name="point" value="{{ point }}" hidden />
+            <input name="id" value="{{ id }}" required readonly hidden />
+            <input name="room_id" value="{{ room_id }}" required readonly hidden />
+            <button type="submit">Submit</button>
+        </form>
     </div>
+</div>
 </body>
 </html>

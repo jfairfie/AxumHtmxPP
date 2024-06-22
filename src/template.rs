@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use crate::models::{Point};
+use crate::models::{Point, Room};
 
 #[derive(Template)]
 #[template(path = "pointingbuttons.html")]
@@ -16,6 +16,17 @@ pub struct PointingButtonsTemplate {
 pub struct PointingPageTemplate {
     pub id: String,
     pub point: String,
+    pub room_id: u32,
+}
+
+#[derive(Template)]
+#[template(path = "createroom.html")]
+pub struct CreateRoomTemplate { }
+
+#[derive(Template)]
+#[template(path = "rooms.html")]
+pub struct RoomTemplate {
+    pub rooms: Vec<Room>,
 }
 
 //a wrapper for turning askama templates into responses that can be handled by server
