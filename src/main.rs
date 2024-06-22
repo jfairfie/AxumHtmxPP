@@ -68,14 +68,18 @@ async fn create_room(form: Form<CreateRoomForm>) -> impl IntoResponse {
 }
 
 async fn points_page(Path(id): Path<u32>) -> impl IntoResponse {
+    if let room = ROOMS.lock().unwrap().get(&(id as usize)) {
+        if room.is_none() {
+            return HtmlTemplate(RoomTemplate { rooms: vec![] }).into_response();
+        }
 
-    if ROOMS.lock().unwrap().get(&(id as usize)).is_some() {
-        return HtmlTemplate(PointingPageTemplate { id: "".to_string(), point: "".to_string(), room_id: id }).into_response()
+        let room = room.unwrap();
+        let room_name = room.name.clone();
+
+        return HtmlTemplate(PointingPageTemplate { id: "".to_string(), point: "".to_string(), room_id: id, room_name }).into_response()
     }
 
-
-    let rooms: Vec<Room> = ROOMS.lock().unwrap().iter().map(|(_, room)| room.clone()).collect();
-    return HtmlTemplate(RoomTemplate { rooms }).into_response();
+    return HtmlTemplate(RoomTemplate { rooms: vec![] }).into_response();
 }
 
 async fn delete_room(Path(id): Path<u32>) -> impl IntoResponse {

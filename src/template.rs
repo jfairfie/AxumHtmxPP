@@ -4,19 +4,12 @@ use axum::response::{Html, IntoResponse, Response};
 use crate::models::{Point, Room};
 
 #[derive(Template)]
-#[template(path = "pointingbuttons.html")]
-pub struct PointingButtonsTemplate {
-    pub name: String,
-    pub id: usize,
-    pub points: Vec<Point>,
-}
-
-#[derive(Template)]
 #[template(path = "testtemplate.html")]
 pub struct PointingPageTemplate {
     pub id: String,
     pub point: String,
     pub room_id: u32,
+    pub room_name: String,
 }
 
 #[derive(Template)]
