@@ -4,7 +4,7 @@ use axum::response::{Html, IntoResponse, Response};
 use crate::models::{Point, Room};
 
 #[derive(Template)]
-#[template(path = "testtemplate.html")]
+#[template(path = "pointing.html")]
 pub struct PointingPageTemplate {
     pub id: String,
     pub point: String,

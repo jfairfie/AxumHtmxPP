@@ -21,7 +21,7 @@ mod models;
 
 lazy_static! {
     static ref POINTS: Mutex<HashMap<usize, Point>> = Mutex::new(HashMap::new());
-    static ref USER_UNBOUNDED_SENDERS: Mutex<HashMap<usize, UnboundedSender<Message>>> = Mutex::new(HashMap::new());
+    static ref USERUNBOUNDED_SENDERS: Mutex<HashMap<usize, UnboundedSender<Message>>> = Mutex::new(HashMap::new());
     static ref ROOM_USER_UNBOUNDED_SENDERS: Mutex<HashMap<usize, HashMap<usize, UnboundedSender<Message>>>> = Mutex::new(HashMap::new());
     static ref ROOMS: Mutex<HashMap<usize, Room>> = Mutex::new(HashMap::new());
     static ref USER_ROOM: Mutex<HashMap<usize, usize>> = Mutex::new(HashMap::new());
@@ -39,7 +39,7 @@ async fn main() -> std::io::Result<()> {
         .route("/ws/points", get(ws_points_handler))
         .route("/delete_room/:id", delete(delete_room));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await.unwrap();
     println!("Listening on http://0.0.0.0:8080");
 
     axum::serve(listener, app).await.unwrap();
@@ -79,7 +79,7 @@ async fn points_page(Path(id): Path<u32>) -> impl IntoResponse {
         return HtmlTemplate(PointingPageTemplate { id: "".to_string(), point: "".to_string(), room_id: id, room_name }).into_response()
     }
 
-    return HtmlTemplate(RoomTemplate { rooms: vec![] }).into_response();
+    HtmlTemplate(RoomTemplate { rooms: vec![] }).into_response()
 }
 
 async fn delete_room(Path(id): Path<u32>) -> impl IntoResponse {
@@ -126,39 +126,65 @@ async fn disconnect(my_id: Option<usize>) {
 
 async fn broadcast_point(room_id: usize) {
     let mut all_points: String = "".to_string();
-    let show = ROOMS.lock().unwrap().get(&room_id).unwrap().board_shown;
 
     let new_show: String;
     let btn_text: String;
-    let shown_css: String;
 
     let cleared = POINTS.lock().unwrap().iter().all(|(_, point)| point.point == 0.0);
+
+    let show;
+
+    if !cleared {
+        show = ROOMS.lock().unwrap().get(&room_id).unwrap().board_shown;
+    } else {
+        show = false;
+    }
 
     match show && !cleared {
         false => {
             new_show = "true".to_string();
             btn_text = "Show".to_string();
-            shown_css = "hidden".to_string();
         },
         true => {
             new_show = "false".to_string();
             btn_text = "Hide".to_string();
-            shown_css = "".to_string();
         }
     }
 
     let user_ids_on_room: Vec<usize> = ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().get(&room_id).unwrap().keys().cloned().collect();
+    let mut total_points: Vec<f32> = vec![];
+
     for point in POINTS.lock().unwrap().iter() {
         if user_ids_on_room.contains(&point.0) {
-            if point.1.point as i32 == 0 {
-                all_points.push_str(&format!("<li> {}: <span class=\"{}\"> {:?} </span></li>", point.1.name, shown_css, point.1.point).to_string());
+            let shown_point: String;
+
+            if show && !cleared {
+                shown_point = format!("<span> {:?} </span>", point.1.point);
+                total_points.push(point.1.point);
             } else {
-                all_points.push_str(&format!("<li> <div class=\"check\"></div> {}: <span class=\"{}\"> {:?} </span></li>", point.1.name, shown_css, point.1.point).to_string());
+                shown_point = "".to_string();
+            }
+
+            if point.1.point as i32 == 0 {
+                all_points.push_str(&format!("<li> {}: {}</li>", point.1.name, shown_point).to_string());
+            } else {
+                all_points.push_str(&format!("<li> <div class=\"check\"></div> {}: {}</li>", point.1.name, shown_point).to_string());
             }
         }
     }
 
     let show_hide: String = format!("<button type=\"button\" id=\"showbtn\" hx-vals='{{\"show\": \"{}\", \"room_id\": \"{}\"}}' ws-send name=\"show\">{}</button>", new_show, room_id, btn_text).to_string();
+
+    let totals: String;
+
+    if show {
+        let total: f32 = total_points.iter().sum();
+        totals = format!("<p id='average'>Average: {}</p>", total / total_points.len() as f32);
+    } else {
+        totals = "".to_string();
+    }
+
+    dbg!(totals.clone());
 
     let tst_message = format!("\
         <form id='newform' ws-send>
@@ -172,17 +198,17 @@ async fn broadcast_point(room_id: usize) {
         </form>
         {}
         <button type=\"button\" id=\"clearbtn\" ws-send hx-vals='{{\"clear\": \"true\", \"room_id\": \"{}\"}}'>Clear All</button>
-        <ul id='point'> {} </ul>\
-    ", show_hide, room_id, all_points).to_string();
+        <ul id='point'> {} </ul>
+        {}", show_hide, room_id, all_points, totals).to_string();
+
+    dbg!(&tst_message);
 
     let mut disconnect_ids: Vec<usize> = vec![];
 
     for (&_uid, tx) in ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().get(&room_id).unwrap().iter() {
         match tx.send(Message::Text(tst_message.clone())) {
             Ok(_) => { println!("Sent"); },
-            Err(_) => {
-                disconnect_ids.push(_uid);
-            }
+            Err(_) => { disconnect_ids.push(_uid); }
         }
 
         tx.send(Message::Text(tst_message.clone())).unwrap();
@@ -235,6 +261,7 @@ fn consume_message(my_id: usize, result: Message, tx: &UnboundedSender<Message>)
             } else if msg.clear.is_some() {
                 for user in ROOM_USER_UNBOUNDED_SENDERS.lock().unwrap().get(&USER_ROOM.lock().unwrap().get(&my_id).unwrap()).unwrap().iter() {
                     POINTS.lock().unwrap().get_mut(&user.0).unwrap().point = 0.0;
+                    ROOMS.lock().unwrap().get_mut(&msg.clone().room_id.expect("Error getting room id").parse::<usize>().unwrap()).unwrap().board_shown = false;
                 }
             }
 
